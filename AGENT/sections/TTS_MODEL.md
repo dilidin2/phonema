@@ -4,7 +4,7 @@
 **Last updated**: 2026-07-05
 
 ## Section Overview
-VoxCPM2 (openbmb/VoxCPM2) model wrapper with unified CPU/GPU support. Handles model loading, voice cloning via reference audio latents, text chunking, and realtime streaming generation. Auto-patches SDPA for CPU stability.
+VoxCPM2 (openbmb/VoxCPM2) model wrapper with CUDA/CPU support. Handles model loading, voice cloning via reference audio latents, text chunking, and realtime streaming generation.
 
 ## Files in this Section
 - `models/voxcpm_tts_model.py` — Full pipeline (380 lines)
@@ -12,13 +12,11 @@ VoxCPM2 (openbmb/VoxCPM2) model wrapper with unified CPU/GPU support. Handles mo
 ## Data Flow Map for voxcpm_tts_model.py
 
 ### 1. Initialization (`__init__`)
-1. **Input**: Config dict with `model.pretrained_path`, `model.force_cpu`, `model.dtype`, `model.inference_timesteps`, `model.language`
+1. **Input**: Config dict with `model.pretrained_path`, `model.dtype`, `model.inference_timesteps`, `model.language`
 2. **Transformation**:
-   - Detect device: CPU (forced or no CUDA) → "cpu", else → "cuda"
-   - Apply `_patch_sdpa_for_cpu()` if on CPU (fixes SDPA dimension errors in VoxCPM forward_step)
+   - Detect device: CUDA available → "cuda", else → "cpu"
    - Load VoxCPM from HuggingFace with `load_denoiser=False, optimize=False`
    - Set dtype mapping: float32/float16/bfloat16
-   - If bfloat16+CPU → warning (illegal instruction risk)
 3. **Output**: Self-contained pipeline with `model`, `device`, `sr=48000`, `_latents_cache`
 
 ### 2. Reference Voice Latent Cache (`_get_latents`)
@@ -47,12 +45,7 @@ VoxCPM2 (openbmb/VoxCPM2) model wrapper with unified CPU/GPU support. Handles mo
    - Yield silence between chunks (0.1s of zeros)
 3. **Output**: Generator yielding `np.ndarray` chunks in real-time order
 
-### 6. CPU SDPA Patch (`_patch_sdpa_for_cpu`)
-1. **Input**: torch.nn.functional.scaled_dot_product_attention
-2. **Transformation**: Wrap to auto-pad Q/K/V tensors to 4D before SDPA call, then strip added dims from output
-3. **Output**: Patched function — transparent to VoxCPM core
-
 ## Dependencies
 - External: `voxcpm`, `torch` (with CUDA or CPU fallback), `numpy`, `soundfile`, `loguru`
 - Internal: Called from `services/tts_service.py` via `TTSService._worker_loop()`
-- Config: `config/tts_config.yaml` model section (pretrained_path, force_cpu, dtype, inference_timesteps, language)
+- Config: `config/tts_config.yaml` model section (pretrained_path, dtype, inference_timesteps, language)

@@ -9,6 +9,7 @@ python-multipart
 
 # Twitch integration
 twitchAPI>=4.5.0
+aiohttp
 
 # Configuration
 pyyaml

@@ -45,8 +45,9 @@ def get_env_config() -> Dict[str, Any]:
     config = {}
 
     # Twitch config
-    config["TWITCH_CLIENT_ID"] = os.getenv("TWITCH_CLIENT_ID", "")
-    config["TWITCH_CLIENT_SECRET"] = os.getenv("TWITCH_CLIENT_SECRET", "")
+    config["TWITCH_CLIENT_ID"] = os.getenv(
+        "TWITCH_CLIENT_ID", "0dy5ss974g4hsuygfbvju265xrhb87"
+    )
     config["TWITCH_BOT_USERNAME"] = os.getenv("TWITCH_BOT_USERNAME", "")
     config["TWITCH_BOT_OAUTH_TOKEN"] = os.getenv("TWITCH_BOT_OAUTH_TOKEN", "")
 

@@ -15,7 +15,7 @@ Real-time Text-to-Speech service for Twitch using **VoxCPM2**. Listens to channe
 - **Voice rotation** — Cycle through multiple voices (random or sequential mode)
 - **Queue management** — Back-pressure controlled concurrent request handling
 - **Auto-reconnect** — OAuth tokens persisted to `token.json` for seamless resumption
-- **Cross-platform** — CPU(Bad performance), CUDA (NVIDIA), and ROCm (AMD) supported
+- **Cross-platform** — CUDA (NVIDIA), and ROCm (AMD) supported
 
 ## Architecture
 
@@ -56,12 +56,7 @@ uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu1
 uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/rocm7.2
 ```
 
-**CPU:**
-```bash
-uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-```
 
-> <small>I do not suggest using CPU due to lack of quantization support of the original VoxCPM model</small>
 
 ### 2. Project dependencies
 
@@ -74,18 +69,6 @@ pip install voxcpm numpy fastapi uvicorn python-multipart twitchAPI pyyaml \
 
 ## Configuration
 
-### Get Twitch API Credentials
-
-1. Go to https://dev.twitch.tv/console
-2. Click **"Register Your Application"**
-3. Fill in:
-   - **Name**: any name for your app
-   - **OAuth Redirect URLs**: `http://localhost:17563`
-   - **Category**: `Chat Bot`
-   - **Client Type**: `Confidential`
-4. Copy the **Client ID**
-5. Click **"New Secret"** under Client Secret, then copy it
-
 ### Environment Variables (`.env`)
 
 Copy `.env.example` to `.env`
@@ -97,10 +80,6 @@ cp .env.example .env # Windows: rename .env.example to .env manually
 and fill in the values:
 
 ```ini
-# Twitch API credentials (from https://dev.twitch.tv/console)
-TWITCH_CLIENT_ID=your_client_id_here
-TWITCH_CLIENT_SECRET=your_client_secret_here
-
 # Bot account username (use your channel name if no separate bot account)
 TWITCH_BOT_USERNAME=your_bot_username
 
@@ -108,6 +87,8 @@ TWITCH_BOT_USERNAME=your_bot_username
 # Get it: https://www.streamweasels.com/tools/convert-twitch-username-to-user-id/
 TWITCH_BROADCASTER_ID=123456789
 ```
+
+> **No Twitch app registration needed.** The bot uses a public client via the Device Code Flow — just start it and authorize from your browser.
 
 ### Model Config (`config/tts_config.yaml`)
 
@@ -122,11 +103,9 @@ Preview of the config:
 ```yaml
 model:
   pretrained_path: "openbmb/VoxCPM2" # HuggingFace model ID
-  force_cpu: false # Force CPU even if CUDA is available
   dtype: "bfloat16"
   inference_timesteps: 5
   language: "it"
-  num_threads_cpu: 8 # CPU threads for inference (used only on CPU)
 
   # VoxCPM2 native sample rate
   sr: 48000
@@ -168,15 +147,21 @@ The server starts on port 8100 by default. Open Swagger docs at `http://localhos
 
 ### Connect to Twitch
 
-First-time connection requires OAuth authentication:
+First-time connection uses the Device Code Flow:
 
 ```bash
-curl -X POST http://localhost:8100/twitch/connect
+curl -X POST http://localhost:8100/twitch/auth/start
 ```
 
-This opens a browser for Twitch login. Tokens are saved to `token.json` and reused on restart.
+This returns a `user_code` and `verification_uri`. Open the URI in your browser, enter the code, and authorize. Tokens are saved to `token.json` and reused on restart.
 
-For auto-connect on startup, set `TWITCH_BROADCASTER_ID` in `.env` — the service attempts connection on launch.
+You can check auth progress with:
+
+```bash
+curl http://localhost:8100/twitch/auth/status
+```
+
+For auto-connect on startup, set `TWITCH_BROADCASTER_ID` in `.env` — the service attempts connection on launch using saved tokens.
 
 ### API Endpoints
 
@@ -196,7 +181,9 @@ curl -X POST http://localhost:8100/tts/speak \
 **Twitch:**
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| POST | `/twitch/connect` | Authenticate and start listening |
+| POST | `/twitch/auth/start` | Start Device Code Flow authorization |
+| GET | `/twitch/auth/status` | Check DCF auth progress |
+| POST | `/twitch/connect` | Connect using saved tokens (if any) |
 | POST | `/twitch/reconnect` | Reconnect using saved tokens |
 | POST | `/twitch/disconnect` | Disconnect EventSub |
 | GET | `/twitch/status` | Connection status |

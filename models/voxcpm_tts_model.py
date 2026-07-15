@@ -12,9 +12,6 @@ import re
 import numpy as np
 import soundfile as sf
 import torch
-torch.backends.mkldnn.enabled = True
-torch.set_num_threads(os.cpu_count())
-import torch.nn.functional as F
 from typing import Tuple, Optional, Generator, List, Dict
 from loguru import logger
 
@@ -30,98 +27,6 @@ def _ensure_voxcpm_installed():
         )
 
 
-def _patch_sdpa_for_cpu():
-    """
-    Workaround per bug VoxCPM2 su CPU.
-
-    Durante forward_step (decoding autoregressivo token-by-token) i tensori
-    Q/K/V possono essere ridotti a 1-2D per un squeeze non intenzionale nel
-    codice VoxCPM. scaled_dot_product_attention richiede almeno 4D
-    [batch, heads, seq, head_dim] → IndexError: Dimension out of range.
-
-    Questo patch porta i tensori a 4D prima della chiamata e rimuove le
-    dimensioni aggiunte dall'output, senza alterare i valori.
-    """
-    if getattr(F, "_voxcpm_sdpa_patched", False):
-        return  # già applicato, evita doppio wrapping
-
-    _orig_sdpa = F.scaled_dot_product_attention
-
-    def _safe_sdpa(
-        query,
-        key,
-        value,
-        attn_mask=None,
-        dropout_p=0.0,
-        is_causal=False,
-        scale=None,
-        enable_gqa=None,
-        **kwargs,
-    ):
-        q_dim = query.dim()
-        k_dim = key.dim()
-        v_dim = value.dim()
-
-        missing_q = max(0, 4 - q_dim)
-        missing_k = max(0, 4 - k_dim)
-        missing_v = max(0, 4 - v_dim)
-
-        # Aggiungi dimensioni mancanti
-        if missing_q:
-            for _ in range(missing_q):
-                query = query.unsqueeze(0)
-        if missing_k:
-            for _ in range(missing_k):
-                key = key.unsqueeze(0)
-        if missing_v:
-            for _ in range(missing_v):
-                value = value.unsqueeze(0)
-        if attn_mask is not None:
-            mask_missing = max(0, 4 - attn_mask.dim())
-            for _ in range(mask_missing):
-                attn_mask = attn_mask.unsqueeze(0)
-
-        out = _orig_sdpa(
-            query,
-            key,
-            value,
-            attn_mask=attn_mask,
-            dropout_p=dropout_p,
-            is_causal=is_causal,
-            scale=scale,
-            enable_gqa=enable_gqa,
-            **kwargs,
-        )
-
-        # Rimuovi dimensioni aggiunte dall'output
-        if missing_q:
-            for _ in range(missing_q):
-                out = out.squeeze(0)
-        return out
-
-    # Patch globale — quando voxcpm importerà torch.nn.functional prenderà questa
-    F.scaled_dot_product_attention = _safe_sdpa
-    torch.nn.functional.scaled_dot_product_attention = _safe_sdpa
-
-    # Patch sui riferimenti interni di voxcpm se già caricati/disponibili
-    try:
-        import voxcpm.core as vc
-        if hasattr(vc, "F") and hasattr(vc.F, "scaled_dot_product_attention"):
-            vc.F.scaled_dot_product_attention = _safe_sdpa
-        if hasattr(vc, "scaled_dot_product_attention"):
-            vc._orig_sdpa = vc.scaled_dot_product_attention
-            vc.scaled_dot_product_attention = _safe_sdpa
-    except Exception:
-        pass
-
-    F._voxcpm_sdpa_patched = True
-
-
-def _unpatch_sdpa_for_cpu():
-    """Non fare nulla: la patch deve restare attiva per tutta l'inferenza."""
-    pass
-
-
 class VoxCPMTTSPipeline:
     """VoxCPM2 streaming pipeline wrapper con voice cloning (CPU/GPU)."""
 
@@ -133,18 +38,7 @@ class VoxCPMTTSPipeline:
         model_cfg = config["model"]
 
         # Determina dispositivo
-        force_cpu = (
-            model_cfg.get("force_cpu", False)
-            or model_cfg.get("device") == "cpu"
-        )
-
-        if force_cpu:
-            self.device = "cpu"
-            logger.info("CPU forced via config")
-            if not os.environ.get("CUDA_VISIBLE_DEVICES"):
-                os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
-                logger.info("Nascosto CUDA_VISIBLE_DEVICES=-1 per forzare CPU")
-        elif torch.cuda.is_available():
+        if torch.cuda.is_available():
             self.device = "cuda"
             logger.info("CUDA available - using GPU")
         else:
@@ -167,17 +61,7 @@ class VoxCPMTTSPipeline:
 
         _ensure_voxcpm_installed()
 
-        if self.device == "cpu":
-            logger.info("⚡ Applicazione Patch SDPA per stabilità su CPU...")
-            _patch_sdpa_for_cpu()
-            num_threads = model_cfg.get("num_threads_cpu", 4)
-            torch.set_num_threads(num_threads)
-            logger.info(f"CPU threads: {num_threads}")
 
-        if self.device == "cpu":
-            torch.cuda.is_available = lambda: False
-            torch.cuda.device_count = lambda: 0
-            logger.info("  Monkey-patched torch.cuda → forced CPU visibility")
 
         from voxcpm import VoxCPM
 
@@ -287,7 +171,6 @@ class VoxCPMTTSPipeline:
     def stream_voice_clone(
         self,
         text: str,
-        language: Optional[str] = None,
         ref_audio: Optional[str] = None,
         ref_text: Optional[str] = None,
         chunk_size_sec: float = 0.5,
@@ -322,7 +205,6 @@ class VoxCPMTTSPipeline:
     def generate_chunked(
         self,
         text: str,
-        language: Optional[str] = None,
         ref_audio: Optional[str] = None,
         ref_text: Optional[str] = None,
         speed: float = 1.0,
@@ -350,18 +232,16 @@ class VoxCPMTTSPipeline:
     def generate_voice_clone(
         self,
         text: str,
-        language: Optional[str] = None,
         ref_audio: Optional[str] = None,
         ref_text: Optional[str] = None,
         **kwargs,
     ) -> Tuple[np.ndarray, int]:
         """Alias di generate_chunked."""
-        return self.generate_chunked(text=text, language=language, ref_audio=ref_audio)
+        return self.generate_chunked(text=text, ref_audio=ref_audio)
 
     def generate_realtime_stream(
         self,
         text: str,
-        language: Optional[str] = None,
         ref_audio: Optional[str] = None,
         ref_text: Optional[str] = None,
         speed: float = 1.0,
@@ -405,17 +285,15 @@ class VoxCPMTTSPipeline:
     def generate_simple(
         self,
         text: str,
-        language: Optional[str] = None,
     ) -> Tuple[np.ndarray, int]:
         """Generazione semplice senza streaming."""
-        lang = language or self.config["model"].get("language", "it")
         default_ref = self.config["model"].get("ref_audio_path")
         if not default_ref:
             raise ValueError(
                 "VoxCPM2 requires a reference audio. "
                 "Configure ref_audio_path in config."
             )
-        return self.generate_chunked(text, lang, ref_audio=default_ref)
+        return self.generate_chunked(text, ref_audio=default_ref)
 
     def _post_process(self, audio: np.ndarray) -> np.ndarray:
         """Trim silenzio e normalizzazione."""

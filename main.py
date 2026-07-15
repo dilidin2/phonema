@@ -25,8 +25,10 @@ load_dotenv()
 def load_config():
     with open("config/tts_config.yaml", "r") as f:
         config = yaml.safe_load(f)
-    config["TWITCH_CLIENT_ID"] = os.getenv("TWITCH_CLIENT_ID", "")
-    config["TWITCH_CLIENT_SECRET"] = os.getenv("TWITCH_CLIENT_SECRET", "")
+    # Public client_id — override via env for forks with their own app
+    config["TWITCH_CLIENT_ID"] = os.getenv(
+        "TWITCH_CLIENT_ID", "0dy5ss974g4hsuygfbvju265xrhb87"
+    )
     config["TWITCH_BOT_USERNAME"] = os.getenv("TWITCH_BOT_USERNAME", "")
     config["TWITCH_BOT_OAUTH_TOKEN"] = os.getenv("TWITCH_BOT_OAUTH_TOKEN", "")
 
@@ -37,7 +39,7 @@ CONFIG = load_config()
 
 # Import services
 from services.tts_service import TTSService
-from services.twitch_service import TwitchService
+from services.twitch_service import TwitchService, TOKEN_PATH
 from services.audio_output import AudioOutputService
 
 
@@ -73,16 +75,10 @@ async def lifespan(app: FastAPI):
     try:
         import torch
 
-        # If we are hiding GPUs, don't even try to query them
-        gpu_disabilitata = (
-            os.environ.get("CUDA_VISIBLE_DEVICES") == "-1"
-            or os.environ.get("HIP_VISIBLE_DEVICES") == "-1"
-        )
-
         valid_gpus = []
         cuda_available = False
 
-        if not gpu_disabilitata and torch.cuda.is_available():
+        if torch.cuda.is_available():
             # Testiamo fisicamente le GPU
             for i in range(torch.cuda.device_count()):
                 try:
@@ -130,17 +126,26 @@ async def lifespan(app: FastAPI):
     logger.info("  Auto-connecting to Twitch...")
     try:
         await twitch_service.connect()
-        await twitch_service.authenticate_user()
+        if TOKEN_PATH.exists():
+            await twitch_service.authenticate_user()
 
-        broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID")
-        if broadcaster_id:
-            await twitch_service.listen_channel_points_redemption(broadcaster_id)
-            logger.info("  ✓ Twitch connected automatically (saved tokens loaded)")
+            broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID")
+            if broadcaster_id:
+                await twitch_service.listen_channel_points_redemption(broadcaster_id)
+                logger.info(
+                    "  ✓ Twitch connected automatically (saved tokens loaded)"
+                )
+        else:
+            # No saved tokens — start DCF automatically in background
+            result = await twitch_service._start_device_flow_async()
+            logger.warning("=" * 50)
+            logger.warning("  ⚠️  No token.json found — first-time authorization")
+            logger.warning(f"  Open: {result['verification_uri']}")
+            logger.warning(f"  Enter code: {result['user_code']}")
+            logger.warning(f"  Expires in: {result['expires_in']}s")
+            logger.warning("=" * 50)
     except Exception as e:
         logger.warning(f"Auto-connect failed: {e}")
-        logger.warning(
-            "  Run 'curl -X POST http://localhost:8100/twitch/connect' to authenticate"
-        )
 
     logger.info("  ✓ All services initialized")
 
@@ -375,6 +380,47 @@ async def get_twitch_status():
         and eventsub._running
         if eventsub
         else False,
+    }
+
+
+@app.post("/twitch/auth/start")
+async def start_auth():
+    """
+    Start the Device Code Flow for first-time or re-authentication.
+    Responds immediately with user_code + verification_uri.
+    On success the service auto-connects to Twitch.
+    """
+    if not hasattr(app.state, "twitch_service"):
+        raise HTTPException(status_code=500, detail="Twitch service not initialized")
+
+    twitch_service = app.state.twitch_service
+
+    try:
+        result = await twitch_service._start_device_flow_async()
+        return {
+            "status": "pending",
+            "verification_uri": result["verification_uri"],
+            "user_code": result["user_code"],
+            "expires_in": result["expires_in"],
+        }
+    except Exception as e:
+        logger.error(f"Failed to start DCF: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/twitch/auth/status")
+async def get_auth_status():
+    """
+    Poll the current DCF authorization status.
+    Returns: idle | pending | success | expired | denied
+    """
+    if not hasattr(app.state, "twitch_service"):
+        return {"status": "not_initialized"}
+
+    twitch_service = app.state.twitch_service
+    return {
+        "auth_status": twitch_service._auth_status,
+        "tokens_exist": TOKEN_PATH.exists(),
     }
 
 

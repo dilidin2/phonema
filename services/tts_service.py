@@ -205,7 +205,7 @@ class TTSService:
                         def make_generator():
                             return self.model.generate_realtime_stream(
                                 text=text,
-                                language="it",
+
                                 ref_audio=ref_audio,
                             )
 
