@@ -199,7 +199,7 @@ Model: Pocket TTS (CPU, Kyutai)           ← if model_type = "cpu_model"
 
 ### Connect to Twitch
 
-For the first time a link will appear in the terminal, click it and then press `Activate` then `Authorize`, this will let the Bot the name of you TTS redemption and start the actual inference when someone redeems the redemption. 
+For the first time a link will appear in the terminal, click it and then press `Activate` then `Authorize`, this will let the Bot see the name of you TTS redemption and start the actual inference when someone redeems the redemption. 
 
 On subsequent starts, if `token.json` exists the service auto-connects and resolves your channel info automatically.
 
