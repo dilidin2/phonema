@@ -358,10 +358,16 @@
 
   /* ── Feature grid ───────────────────────────────────── */
   .features-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
     gap: 16px;
     margin-top: 3rem;
+  }
+
+  .feature-chip {
+    flex: 0 0 calc(25% - 12px);
+    max-width: calc(25% - 12px);
   }
 
   .feature-chip {
@@ -492,14 +498,16 @@
       margin: 0;
     }
 
-    .features-grid {
-      grid-template-columns: 1fr 1fr;
+    .feature-chip {
+      flex: 0 0 calc(50% - 8px);
+      max-width: calc(50% - 8px);
     }
   }
 
-  @media (max-width: 400px) {
-    .features-grid {
-      grid-template-columns: 1fr;
+  @media (max-width: 480px) {
+    .feature-chip {
+      flex: 0 0 100%;
+      max-width: 100%;
     }
   }
 
