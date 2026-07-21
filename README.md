@@ -85,16 +85,14 @@ uv pip install torch torchaudio --index-url https://download.pytorch.org/whl/cpu
 
 ```bash
 uv pip install -r requirements.txt
-# or manually:
-pip install voxcpm numpy fastapi uvicorn python-multipart twitchAPI pyyaml \
-           python-dotenv loguru sounddevice soundfile aiohttp
 ```
 
 **For Pocket TTS (CPU mode):** Uncomment `pocket-tts` and `scipy` in `requirements.txt`, then install:
 ```bash
-pip install pocket-tts scipy
+uv pip install -r requirements.txt
 ```
 
+> If you use the PyTorch ROCm or CPU build voxcpm will still download the CUDA version, so make sure after the `uv pip install -r requirements.txt` to do a `uv pip uninstall torch torchaudio` THEN install the right backend for your hardware.
 ## Config
 
 
@@ -189,7 +187,7 @@ voice_rotation:
 uv run main.py
 ```
 
-The server starts on port 8100 by default. Open Swagger docs at `http://localhost:8100/docs`.
+Modify the config at `config/tts_config.yaml` to actually use Phonema, the only needed thing is the `redemption_name` for a minimal change config
 
 At startup, the log shows which model is loaded:
 ```
@@ -199,11 +197,11 @@ Model: Pocket TTS (CPU, Kyutai)           ← if model_type = "cpu_model"
 
 ### Connect to Twitch
 
-For the first time a link will appear in the terminal, click it and then press `Activate` then `Authorize`, this will let the Bot see the name of you TTS redemption and start the actual inference when someone redeems the redemption. 
+For the first time a link will appear in the terminal, click it and then press `Activate` then `Authorize`, this will let Phonema see the name of you TTS redemption and start the actual inference when someone redeems the redemption. 
 
 On subsequent starts, if `token.json` exists the service auto-connects and resolves your channel info automatically.
 
-### API Endpoints
+## API Endpoints
 
 **TTS:**
 | Method | Endpoint | Description |
