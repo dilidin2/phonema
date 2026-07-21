@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phonema — Your Chat, Speaking Back</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #08080d;
+    --bg-elevated: #12121a;
+    --bg-card: #16161f;
+    --purple: #8B5CF6;
+    --purple-dim: rgba(139, 92, 246, 0.15);
+    --green: #06D6A0;
+    --green-glow: rgba(6, 214, 160, 0.25);
+    --text: #E2E8F0;
+    --text-dim: #94A3B8;
+    --text-muted: #64748B;
+    --border: rgba(139, 92, 246, 0.12);
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: 'Inter', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── Waveform signature ─────────────────────────────── */
+  .waveform {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    height: 48px;
+    margin-bottom: 2rem;
+  }
+
+  .waveform .bar {
+    width: 4px;
+    border-radius: 2px;
+    background: var(--purple);
+    animation: pulse var(--d, 1.2s) ease-in-out infinite alternate;
+    animation-delay: var(--delay, 0s);
+  }
+
+  @keyframes pulse {
+    0%   { height: 6px; opacity: 0.3; }
+    100% { height: var(--h, 36px); opacity: 1; }
+  }
+
+  .waveform--green .bar { background: var(--green); }
+
+  /* ── Layout ─────────────────────────────────────────── */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0 24px;
+  }
+
+  section {
+    padding: 80px 0;
+  }
+
+  /* ── Hero ───────────────────────────────────────────── */
+  .hero {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    position: relative;
+    padding-top: 60px;
+    padding-bottom: 60px;
+  }
+
+  .hero::before {
+    content: '';
+    position: absolute;
+    top: -20%;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 600px;
+    height: 600px;
+    background: radial-gradient(circle, rgba(139, 92, 246, 0.08) 0%, transparent 70%);
+    pointer-events: none;
+  }
+
+  .eyebrow {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8rem;
+    font-weight: 500;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    color: var(--green);
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .eyebrow::before {
+    content: '';
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--green);
+    animation: blink 2s ease-in-out infinite;
+  }
+
+  @keyframes blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .hero h1 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(2.8rem, 7vw, 5rem);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.03em;
+    margin-bottom: 1.5rem;
+    max-width: 700px;
+  }
+
+  .hero h1 em {
+    font-style: normal;
+    background: linear-gradient(135deg, var(--purple), var(--green));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .hero-sub {
+    font-size: clamp(1.05rem, 2.2vw, 1.25rem);
+    color: var(--text-dim);
+    max-width: 540px;
+    margin-bottom: 2.5rem;
+    line-height: 1.7;
+  }
+
+  .cta-group {
+    display: flex;
+    gap: 16px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 28px;
+    border-radius: 10px;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.25s ease;
+    cursor: pointer;
+    border: none;
+  }
+
+  .btn--primary {
+    background: var(--purple);
+    color: #fff;
+    box-shadow: 0 0 30px rgba(139, 92, 246, 0.3), inset 0 1px 0 rgba(255,255,255,0.1);
+  }
+
+  .btn--primary:hover {
+    background: #7C4FE0;
+    box-shadow: 0 0 50px rgba(139, 92, 246, 0.45), inset 0 1px 0 rgba(255,255,255,0.15);
+    transform: translateY(-2px);
+  }
+
+  .btn--ghost {
+    background: transparent;
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+
+  .btn--ghost:hover {
+    color: var(--text);
+    border-color: rgba(139, 92, 246, 0.35);
+    background: var(--purple-dim);
+  }
+
+  /* ── Section headers ────────────────────────────────── */
+  .section-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--purple);
+    margin-bottom: 0.75rem;
+  }
+
+  .section-title {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(1.8rem, 4vw, 2.6rem);
+    font-weight: 700;
+    line-height: 1.15;
+    letter-spacing: -0.02em;
+    margin-bottom: 1rem;
+  }
+
+  .section-desc {
+    color: var(--text-dim);
+    font-size: 1.05rem;
+    max-width: 560px;
+    line-height: 1.7;
+  }
+
+  /* ── Pain point section ─────────────────────────────── */
+  .pain {
+    text-align: center;
+  }
+
+  .pain-quote {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: clamp(1.3rem, 3vw, 1.8rem);
+    font-weight: 500;
+    line-height: 1.5;
+    color: var(--text);
+    max-width: 640px;
+    margin: 0 auto 2rem;
+  }
+
+  .pain-quote span {
+    color: var(--green);
+  }
+
+  /* ── Pillars (3 columns) ────────────────────────────── */
+  .pillars {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 20px;
+    margin-top: 3rem;
+  }
+
+  .pillar {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .pillar::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg, var(--purple), var(--green));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+
+  .pillar:hover {
+    border-color: rgba(139, 92, 246, 0.25);
+    transform: translateY(-4px);
+    box-shadow: 0 20px 60px -20px rgba(139, 92, 246, 0.15);
+  }
+
+  .pillar:hover::before { opacity: 1; }
+
+  .pillar-icon {
+    font-size: 1.8rem;
+    margin-bottom: 1rem;
+    display: block;
+  }
+
+  .pillar h3 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.15rem;
+    font-weight: 600;
+    margin-bottom: 0.6rem;
+  }
+
+  .pillar p {
+    color: var(--text-dim);
+    font-size: 0.92rem;
+    line-height: 1.65;
+  }
+
+  /* ── How it works (3 steps) ─────────────────────────── */
+  .steps {
+    display: flex;
+    gap: 0;
+    margin-top: 3rem;
+    position: relative;
+  }
+
+  .steps::before {
+    content: '';
+    position: absolute;
+    top: 28px;
+    left: 28px;
+    right: 28px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--purple), var(--green));
+    opacity: 0.3;
+  }
+
+  .step {
+    flex: 1;
+    text-align: center;
+    position: relative;
+    padding: 0 16px;
+  }
+
+  .step-number {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    border: 2px solid var(--purple);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 1.2rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--purple);
+    position: relative;
+    z-index: 1;
+  }
+
+  .step h3 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+  }
+
+  .step p {
+    color: var(--text-dim);
+    font-size: 0.88rem;
+    line-height: 1.6;
+  }
+
+  /* ── Feature grid ───────────────────────────────────── */
+  .features-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 3rem;
+  }
+
+  .feature-chip {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px 20px;
+    transition: all 0.25s ease;
+  }
+
+  .feature-chip:hover {
+    border-color: rgba(6, 214, 160, 0.3);
+    background: var(--bg-card);
+  }
+
+  .feature-chip-icon {
+    font-size: 1.4rem;
+    margin-bottom: 0.6rem;
+    display: block;
+  }
+
+  .feature-chip h4 {
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-bottom: 0.3rem;
+  }
+
+  .feature-chip p {
+    color: var(--text-muted);
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  /* ── Languages strip ────────────────────────────────── */
+  .lang-strip {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+    margin-top: 2rem;
+  }
+
+  .lang-tag {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    padding: 8px 18px;
+    border-radius: 100px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-dim);
+    transition: all 0.2s ease;
+  }
+
+  .lang-tag:hover {
+    border-color: var(--purple);
+    color: var(--text);
+    background: var(--purple-dim);
+  }
+
+  /* ── CTA final section ──────────────────────────────── */
+  .cta-section {
+    text-align: center;
+    padding: 100px 0 120px;
+  }
+
+  .cta-section .section-title {
+    margin-bottom: 1.5rem;
+  }
+
+  /* ── Footer ─────────────────────────────────────────── */
+  footer {
+    text-align: center;
+    padding: 40px 24px;
+    border-top: 1px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.82rem;
+  }
+
+  footer a {
+    color: var(--purple);
+    text-decoration: none;
+  }
+
+  footer a:hover {
+    text-decoration: underline;
+  }
+
+  /* ── Scroll reveal ──────────────────────────────────── */
+  .reveal {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── Responsive ─────────────────────────────────────── */
+  @media (max-width: 640px) {
+    section { padding: 60px 0; }
+
+    .steps {
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    .steps::before {
+      top: 0;
+      bottom: 0;
+      left: 28px;
+      right: auto;
+      width: 2px;
+      height: auto;
+    }
+
+    .step {
+      text-align: left;
+      padding-left: 72px;
+      padding-right: 0;
+    }
+
+    .step-number {
+      position: absolute;
+      left: 0;
+      margin: 0;
+    }
+
+    .features-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+  }
+
+  @media (max-width: 400px) {
+    .features-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* Reduced motion */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+    .reveal { opacity: 1; transform: none; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ HERO ═══════════════ -->
+<section class="hero">
+  <div class="container">
+
+    <!-- Waveform signature -->
+    <div class="waveform" aria-hidden="true">
+      <span class="bar" style="--h:20px;--d:0.9s;--delay:0.0s"></span>
+      <span class="bar" style="--h:36px;--d:1.1s;--delay:0.1s"></span>
+      <span class="bar" style="--h:28px;--d:0.8s;--delay:0.2s"></span>
+      <span class="bar" style="--h:42px;--d:1.3s;--delay:0.15s"></span>
+      <span class="bar" style="--h:32px;--d:1.0s;--delay:0.3s"></span>
+      <span class="bar" style="--h:48px;--d:1.2s;--delay:0.05s"></span>
+      <span class="bar" style="--h:38px;--d:0.9s;--delay:0.25s"></span>
+      <span class="bar" style="--h:24px;--d:1.4s;--delay:0.1s"></span>
+      <span class="bar" style="--h:44px;--d:1.0s;--delay:0.35s"></span>
+      <span class="bar" style="--h:30px;--d:0.8s;--delay:0.2s"></span>
+      <span class="bar" style="--h:40px;--d:1.1s;--delay:0.15s"></span>
+      <span class="bar" style="--h:26px;--d:1.3s;--delay:0.0s"></span>
+      <span class="bar" style="--h:46px;--d:0.9s;--delay:0.3s"></span>
+      <span class="bar" style="--h:34px;--d:1.2s;--delay:0.1s"></span>
+      <span class="bar" style="--h:22px;--d:1.0s;--delay:0.25s"></span>
+    </div>
+
+    <div class="eyebrow">live on your stream</div>
+
+    <h1>Your chat.<br><em>Speaking back.</em></h1>
+
+    <p class="hero-sub">
+      Viewers type a message with channel points — Phonema reads it out loud, instantly, right during your live stream. No cloud. No subscription. Runs on your own PC.
+    </p>
+
+    <div class="cta-group">
+      <a href="https://github.com/dilidin2/phonema-twitch-tts" class="btn btn--primary" target="_blank" rel="noopener">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/></svg>
+        Download — it's free
+      </a>
+      <a href="#how" class="btn btn--ghost">See how it works</a>
+    </div>
+
+  </div>
+</section>
+
+
+<!-- ═══════════════ PAIN POINT ═══════════════ -->
+<section class="pain reveal">
+  <div class="container">
+    <p class="pain-quote">
+      You've tried those cloud TTS tools. The lag, the monthly fee, the robotic voices that cut off mid-sentence…<br><span>There's a better way.</span>
+    </p>
+  </div>
+</section>
+
+
+<!-- ═══════════════ THREE PILLARS ═══════════════ -->
+<section class="reveal">
+  <div class="container">
+    <div class="section-label">Why Phonema</div>
+    <h2 class="section-title">Three things that matter.<br>All checked.</h2>
+
+    <div class="pillars">
+      <div class="pillar">
+        <span class="pillar-icon">🖥️</span>
+        <h3>Runs on your machine</h3>
+        <p>Everything stays local. No cloud servers, no data leaving your PC, no monthly subscriptions. Your stream, your computer, your rules.</p>
+      </div>
+
+      <div class="pillar">
+        <span class="pillar-icon">⚡</span>
+        <h3>Any computer works</h3>
+        <p>No fancy graphics card required. A lightweight CPU mode handles everything — if your PC can run a browser and OBS, it runs Phonema.</p>
+      </div>
+
+      <div class="pillar">
+        <span class="pillar-icon">🎙️</span>
+        <h3>20+ voices, 6 languages</h3>
+        <p>Built-in voices in English, Italian, French, German, Portuguese and Spanish. Or clone any voice with a short audio sample — your own, a character, anything.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════ HOW IT WORKS ═══════════════ -->
+<section id="how" class="reveal">
+  <div class="container">
+    <div class="section-label">How it works</div>
+    <h2 class="section-title">Up and running in minutes</h2>
+    <p class="section-desc">No developer skills needed. Just download, authorize, go live.</p>
+
+    <div class="steps">
+      <div class="step">
+        <div class="step-number">1</div>
+        <h3>Download &amp; launch</h3>
+        <p>Grab Phonema from GitHub and start it up. It asks you to authorize your Twitch channel — one click, done forever.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-number">2</div>
+        <h3>Pick a voice</h3>
+        <p>Choose from 20+ built-in voices or drop in a .wav file to clone any voice. Set it and forget it.</p>
+      </div>
+
+      <div class="step">
+        <div class="step-number">3</div>
+        <h3>Go live</h3>
+        <p>Your viewers redeem channel points with a message — Phonema speaks it out loud, in real time, during your stream.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════ FEATURES GRID ═══════════════ -->
+<section class="reveal">
+  <div class="container">
+    <div class="section-label">What you get</div>
+    <h2 class="section-title">Built for streamers,<br>not engineers</h2>
+
+    <div class="features-grid">
+      <div class="feature-chip">
+        <span class="feature-chip-icon">🔁</span>
+        <h4>Voice rotation</h4>
+        <p>Cycle through multiple voices — random or in order. Mix built-in and custom cloned voices.</p>
+      </div>
+
+      <div class="feature-chip">
+        <span class="feature-chip-icon">🎧</span>
+        <h4>Real-time streaming</h4>
+        <p>Audio plays while it's still generating. No awkward pauses, no waiting for the full sentence.</p>
+      </div>
+
+      <div class="feature-chip">
+        <span class="feature-chip-icon">🌍</span>
+        <h4>Multilingual</h4>
+        <p>Switch languages on the fly. Your international chat will love it.</p>
+      </div>
+
+      <div class="feature-chip">
+        <span class="feature-chip-icon">🔌</span>
+        <h4>Auto-reconnect</h4>
+        <p>Twitch drops? Phonema picks right back up. Tokens are saved, no re-authorization needed.</p>
+      </div>
+
+      <div class="feature-chip">
+        <span class="feature-chip-icon">📋</span>
+        <h4>Smart queue</h4>
+        <p>Chat spams ten messages at once? They get processed in order, smoothly, no crashes.</p>
+      </div>
+
+      <div class="feature-chip">
+        <span class="feature-chip-icon">🔓</span>
+        <h4>Open source</h4>
+        <p>MIT license. Free forever. Inspect the code, modify it, share it — no strings attached.</p>
+      </div>
+    </div>
+
+    <!-- Languages -->
+    <div class="lang-strip">
+      <span class="lang-tag">🇬🇧 English</span>
+      <span class="lang-tag">🇮🇹 Italiano</span>
+      <span class="lang-tag">🇫🇷 Français</span>
+      <span class="lang-tag">🇩🇪 Deutsch</span>
+      <span class="lang-tag">🇵🇹 Português</span>
+      <span class="lang-tag">🇪🇸 Español</span>
+    </div>
+  </div>
+</section>
+
+
+<!-- ═══════════════ FINAL CTA ═══════════════ -->
+<section class="cta-section reveal">
+  <div class="container">
+    <!-- Small waveform accent -->
+    <div class="waveform waveform--green" aria-hidden="true" style="margin-bottom:2rem;">
+      <span class="bar" style="--h:16px;--d:0.9s;--delay:0.0s"></span>
+      <span class="bar" style="--h:28px;--d:1.1s;--delay:0.15s"></span>
+      <span class="bar" style="--h:22px;--d:0.8s;--delay:0.1s"></span>
+      <span class="bar" style="--h:34px;--d:1.2s;--delay:0.25s"></span>
+      <span class="bar" style="--h:26px;--d:1.0s;--delay:0.05s"></span>
+      <span class="bar" style="--h:38px;--d:1.3s;--delay:0.2s"></span>
+      <span class="bar" style="--h:20px;--d:0.9s;--delay:0.15s"></span>
+      <span class="bar" style="--h:32px;--d:1.1s;--delay:0.0s"></span>
+      <span class="bar" style="--h:18px;--d:1.0s;--delay:0.3s"></span>
+    </div>
+
+    <h2 class="section-title">Stop paying for TTS.<br>Start streaming with Phonema.</h2>
+    <p class="section-desc" style="margin: 0 auto 2rem;">
+      Free, local, and faster than anything cloud-based. Your chat deserves to be heard.
+    </p>
+    <a href="https://github.com/dilidin2/phonema-twitch-tts" class="btn btn--primary" target="_blank" rel="noopener">
+      Get Phonema on GitHub
+    </a>
+  </div>
+</section>
+
+
+<!-- ═══════════════ FOOTER ═══════════════ -->
+<footer>
+  <p>Phonema is open-source software under the <a href="https://github.com/dilidin2/phonema-twitch-tts/blob/main/LICENSE">MIT License</a>.<br>Built by streamers, for streamers.</p>
+</footer>
+
+
+<!-- ═══════════════ Scroll reveal script ═══════════════ -->
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+    const reveals = document.querySelectorAll('.reveal');
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.15 });
+
+    reveals.forEach(el => observer.observe(el));
+  });
+</script>
+
+</body>
+</html>

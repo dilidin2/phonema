@@ -95,19 +95,8 @@ pip install voxcpm numpy fastapi uvicorn python-multipart twitchAPI pyyaml \
 pip install pocket-tts scipy
 ```
 
-## Configuration
+## Config
 
-### Environment Variables (`.env`)
-
-Copy `.env.example` to `.env`
-
-```bash
-cp .env.example .env # Windows: rename .env.example to .env manually
-```
-
-No broadcaster ID or bot username needed — everything is resolved automatically from the OAuth token after browser authorization.
-
-> **No Twitch app registration needed.** The bot uses a public client via the Device Code Flow — just start it, open `https://www.twitch.tv/activate`, enter the displayed code, and your channel info is fetched automatically.
 
 ### Model Config (`config/tts_config.yaml`)
 
@@ -168,7 +157,7 @@ voice_rotation:
 | **PT** | `rafael` |
 | **FR** | `estelle` |
 
-> Custom voice files (`.wav` / `.safetensors`) require accepting terms on [HuggingFace](https://huggingface.co/kyutai/pocket-tts) and logging in with `uvx hf auth login`.
+> Custom voice files (`.wav` / `.safetensors`) require accepting terms on [HuggingFace](https://huggingface.co/kyutai/pocket-tts) and logging in with `uvx hf auth login` (Not needed if you use the Catalog Voices).
 
 ### Pocket TTS Languages
 
@@ -190,14 +179,14 @@ voice_rotation:
 
 **For Pocket TTS (CPU):**
 - **Catalog mode** — No files needed! Just use built-in voice names in `voice_rotation.voices` (e.g., `"giovanni"`, `"alba"`). Works without HF login.
-- **Clone mode** — Place `.wav` or `.safetensors` files in `config/voices/`. Requires HF login + accepting terms on [kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts).
+- **Clone mode** — Place `.wav` files in `config/voices/`. Requires HF login + accepting terms on [kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts).
 
 ## Usage
 
 ### Start the server
 
 ```bash
-python main.py
+uv run main.py
 ```
 
 The server starts on port 8100 by default. Open Swagger docs at `http://localhost:8100/docs`.
@@ -210,19 +199,7 @@ Model: Pocket TTS (CPU, Kyutai)           ← if model_type = "cpu_model"
 
 ### Connect to Twitch
 
-First-time connection uses the Device Code Flow:
-
-```bash
-curl -X POST http://localhost:8100/twitch/auth/start
-```
-
-This returns a `user_code` and `verification_uri`. Open the URI in your browser, enter the code, and authorize. Tokens are saved to `token.json` and reused on restart.
-
-You can check auth progress with:
-
-```bash
-curl http://localhost:8100/twitch/auth/status
-```
+For the first time a link will appear in the terminal, click it and then press 'Activate' then 'Authorize', this will let the Bot the name of you TTS redemption and start the actual inference when someone redeems the redemption. 
 
 On subsequent starts, if `token.json` exists the service auto-connects and resolves your channel info automatically.
 
@@ -276,4 +253,4 @@ The `/health` endpoint reports `model_type` (`gpu_model` / `cpu_model`). For CPU
 MIT License.
 
 VoxCPM2 model is licensed under Apache 2.0 (by OpenBMB). Respect their license when using model weights.
-Pocket TTS model by Kyutai — check [kyutai/pocket-tts](https://huggingface.co/kyutai/pocket-tts) for licensing details.
+Pocket TTS model by Kyutai is licensed under the MIT license. Respect their license when using model weights.
