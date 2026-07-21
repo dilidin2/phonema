@@ -57,6 +57,7 @@ class TTSResponse(BaseModel):
 
 class HealthResponse(BaseModel):
     status: str
+    model_type: str
     cuda_available: bool
     cuda_devices: int
     queue_size: int
@@ -66,9 +67,16 @@ class HealthResponse(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
+    # Show model type
+    model_type = CONFIG.get("model_type", "gpu_model")
+    if model_type == "cpu_model":
+        model_label = "Pocket TTS (CPU, Kyutai)"
+    else:
+        model_label = "VoxCPM2 (GPU, BMB/ModelScope)"
+
     logger.info("=" * 60)
     logger.info("  Starting Twitch Channel Points TTS Server")
-    logger.info("  Model: VoxCPM2 (BMB/ModelScope)")
+    logger.info(f"  Model: {model_label}")
     logger.info("=" * 60)
 
     # Check CUDA availability
@@ -114,8 +122,13 @@ async def lifespan(app: FastAPI):
     # Initialize services
     logger.info("  Initializing services...")
 
+    # Dynamic sample rate based on model type
+    model_type = CONFIG.get("model_type", "gpu_model")
+    samplerate = 24000 if model_type == "cpu_model" else 48000
+
     audio_service = AudioOutputService(
-        method=CONFIG.get("AUDIO_OUTPUT_METHOD", "direct")
+        method=CONFIG.get("AUDIO_OUTPUT_METHOD", "direct"),
+        samplerate=samplerate,
     )
     tts_service = TTSService(CONFIG, audio_service=audio_service)
     await tts_service.start_workers(num_workers=1)
@@ -221,12 +234,18 @@ async def health_check():
         # Get queue status safely
         queue_size = 0
         workers_active = 0
+        model_type = "gpu_model"
         if hasattr(app.state, "tts_service") and app.state.tts_service:
             queue_size = app.state.tts_service.queue.qsize()
             workers_active = len(app.state.tts_service.worker_tasks)
+            model_type = app.state.tts_service.model_type
+
+        # CPU model doesn't need CUDA
+        healthy = (cuda_available if model_type == "gpu_model" else True)
 
         return HealthResponse(
-            status="ok" if cuda_available else "degraded",
+            status="ok" if healthy else "degraded",
+            model_type=model_type,
             cuda_available=cuda_available,
             cuda_devices=cuda_devices,
             queue_size=queue_size,
@@ -235,6 +254,7 @@ async def health_check():
     except Exception as e:
         return HealthResponse(
             status="error",
+            model_type="unknown",
             cuda_available=False,
             cuda_devices=0,
             queue_size=0,
@@ -295,12 +315,14 @@ async def get_queue_status():
 
     queue = app.state.tts_service.queue
 
+    tts = app.state.tts_service
     return {
         "queue_size": queue.qsize(),
         "max_size": queue.maxsize,
-        "active_workers": len(app.state.tts_service.worker_tasks),
-        "is_running": app.state.tts_service._is_running,
-        "model": "VoxCPM2",  # Info aggiuntiva
+        "active_workers": len(tts.worker_tasks),
+        "is_running": tts._is_running,
+        "model_type": tts.model_type,  # "gpu_model" or "cpu_model"
+        "sample_rate": tts.sample_rate,
     }
 
 

@@ -9,9 +9,32 @@ from typing import Any, Dict, List, Optional
 
 import numpy as np
 from loguru import logger
-from models.voxcpm_tts_model import VoxCPMTTSPipeline
 
 from services.audio_output import AudioOutputService
+
+# ── Model type constants ─────────────────────────────────────────────────────
+MODEL_VOXCPM = "gpu_model"
+MODEL_POCKET = "cpu_model"
+
+
+def _resolve_voice(entry: str, voices_dir: str) -> str:
+    """
+    Risolve automaticamente una voce del config.
+
+    - Se è un nome nel catalogo → restituisce il nome (catalog voice, no HF login)
+    - Se ha estensione .wav/.safetensors → risolve come file path (clone voice)
+    - Altrimenti → prova come file path in voices_dir
+    """
+    from models.pocket_tts_model import CATALOG_VOICES
+
+    if entry in CATALOG_VOICES:
+        return entry  # catalog voice — returned as-is, no path resolution
+    if os.path.isabs(entry) or any(
+        entry.endswith(ext) for ext in (".wav", ".safetensors")
+    ):
+        return entry if os.path.isabs(entry) else os.path.join(voices_dir, entry)
+    # No extension and not a catalog name → treat as file path anyway
+    return os.path.join(voices_dir, entry)
 
 
 class VoiceRotator:
@@ -23,6 +46,10 @@ class VoiceRotator:
       - "random"      → sceglie casualmente, evitando di ripetere
                         la stessa voce due volte di fila
       - "disabled"    → usa sempre ref_audio_path (comportamento originale)
+
+    Rilevamento automatico: la lista 'voices' può contenere sia nomi catalog
+    (es. "giovanni", "alba") che file path (es. "voice_a.wav"). Il codice
+    distingue automaticamente senza bisogno di voice_mode.
     """
 
     def __init__(self, config: dict):
@@ -30,14 +57,12 @@ class VoiceRotator:
         rotation_cfg = config.get("voice_rotation", {})
 
         self.mode: str = rotation_cfg.get("mode", "sequential")
-
         voices_from_cfg: List[str] = rotation_cfg.get("voices", [])
+        voices_dir: str = rotation_cfg.get("voices_dir", "config/voices")
 
         if voices_from_cfg:
-            base_dir = rotation_cfg.get("voices_dir", "config/voices")
             self.voices: List[str] = [
-                v if os.path.isabs(v) else os.path.join(base_dir, v)
-                for v in voices_from_cfg
+                _resolve_voice(v, voices_dir) for v in voices_from_cfg
             ]
         else:
             single = model_cfg.get("ref_audio_path", "")
@@ -53,21 +78,34 @@ class VoiceRotator:
                 "Imposta model.voice_rotation.voices o model.ref_audio_path nel config."
             )
 
+        # Validation + categorization
+        from models.pocket_tts_model import _is_catalog_voice
+
+        catalog_count = 0
+        clone_count = 0
         for v in self.voices:
-            if not os.path.exists(v):
+            if _is_catalog_voice(v):
+                catalog_count += 1
+            elif not os.path.exists(v):
                 logger.warning(f"VoiceRotator: voice file not found → {v}")
+            else:
+                clone_count += 1
 
-        self._index: int = 0
-        self._last_idx: int = -1
-
+        display_names = [
+            v if _is_catalog_voice(v) else os.path.basename(v)
+            for v in self.voices
+        ]
         logger.info(
             f"VoiceRotator pronto: {len(self.voices)} voce/i, "
-            f"modalità '{self.mode}' | {[os.path.basename(v) for v in self.voices]}"
+            f"modalità '{self.mode}' | catalog={catalog_count}, clone={clone_count} | "
+            f"{display_names}"
         )
 
     def next(self) -> str:
+        from models.pocket_tts_model import _is_catalog_voice
+
         if len(self.voices) == 1:
-            if not os.path.exists(self.voices[0]):
+            if not _is_catalog_voice(self.voices[0]) and not os.path.exists(self.voices[0]):
                 raise FileNotFoundError(f"Voice file missing: {self.voices[0]}")
             return self.voices[0]
 
@@ -80,10 +118,11 @@ class VoiceRotator:
             self._index = (self._index + 1) % len(self.voices)
 
         chosen = self.voices[idx]
-        if not os.path.exists(chosen):
+        if not _is_catalog_voice(chosen) and not os.path.exists(chosen):
             logger.error(f"Voice file not found at runtime: {chosen}")
             raise FileNotFoundError(chosen)
-        logger.debug(f"VoiceRotator → {os.path.basename(chosen)}")
+        display = chosen if _is_catalog_voice(chosen) else os.path.basename(chosen)
+        logger.debug(f"VoiceRotator → {display}")
         return chosen
 
     @property
@@ -97,13 +136,19 @@ class VoiceRotator:
 
 
 class TTSService:
-    """Async TTS service with queue management"""
+    """Async TTS service with queue management.
+
+    Supporto dual-mode: scegli il modello via config["model_type"]:
+      - "gpu_model"  → VoxCPM2 (pesante, richiede GPU)
+      - "cpu_model"  → Pocket TTS (leggero, gira su CPU)
+    """
 
     def __init__(
         self, config: dict, audio_service: Optional[AudioOutputService] = None
     ):
         self.config = config
-        self.sample_rate = 48000  # VoxCPM2 nativo
+        self.model_type = config.get("model_type", MODEL_VOXCPM)
+        self.sample_rate = 48000 if self.model_type == MODEL_VOXCPM else 24000
 
         self.model = None
         self.audio_service = audio_service
@@ -120,9 +165,11 @@ class TTSService:
 
         self.voice_rotator = VoiceRotator(config)
 
+        logger.info(f"TTS model type: {self.model_type} ({self.sample_rate / 1000:.0f}kHz)")
+
     async def start_workers(self, num_workers: int = 1):
         logger.info(
-            f"Starting {num_workers} TTS workers | "
+            f"Starting {num_workers} TTS workers | model={self.model_type} | "
             f"voices: {self.voice_rotator.count} | "
             f"rotation: {self.voice_rotator.mode}"
         )
@@ -175,21 +222,36 @@ class TTSService:
                 if not text:
                     continue  # finally handles task_done
 
-                # Lazy-load VoxCPM2 model on first start
+                # Lazy-load model on first start (dual-mode)
                 if self.model is None:
                     async with self._inference_lock:
                         if self.model is None:
-                            logger.info("Initializing VoxCPM2 (first start)...")
-                            self.model = await asyncio.to_thread(
-                                VoxCPMTTSPipeline, self.config
-                            )
+                            if self.model_type == MODEL_POCKET:
+                                from models.pocket_tts_model import PocketTTSPipeline
+                                logger.info("Initializing Pocket TTS (CPU model, first start)...")
+                                self.model = await asyncio.to_thread(
+                                    PocketTTSPipeline, self.config
+                                )
+                            else:
+                                from models.voxcpm_tts_model import VoxCPMTTSPipeline
+                                logger.info("Initializing VoxCPM2 (GPU model, first start)...")
+                                self.model = await asyncio.to_thread(
+                                    VoxCPMTTSPipeline, self.config
+                                )
+                            # Warm-up: pass voice names (catalog) or existing files (clone)
+                            from models.pocket_tts_model import _is_catalog_voice
+                            warmup_voices = [
+                                v for v in self.voice_rotator.voices
+                                if _is_catalog_voice(v) or os.path.exists(v)
+                            ]
                             await asyncio.to_thread(
-                                self.model.warm_up_cache, self.voice_rotator.voices
+                                self.model.warm_up_cache, warmup_voices
                             )
 
                 ref_audio = request.get("ref_audio") or self.voice_rotator.next()
+                model_label = "Pocket TTS" if self.model_type == MODEL_POCKET else "VoxCPM2"
                 logger.info(
-                    f"Worker {worker_id}: VoxCPM2 '{text[:40]}...' "
+                    f"Worker {worker_id}: {model_label} '{text[:40]}...' "
                     f"| voice: {os.path.basename(ref_audio)}"
                 )
 

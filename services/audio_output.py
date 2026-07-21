@@ -16,18 +16,23 @@ _BLOCKSIZE = 2048
 
 
 class AudioOutputService:
-    """Gestisce la riproduzione audio per i chunk TTS e file WAV"""
+    """Gestisce la riproduzione audio per i chunk TTS e file WAV.
 
-    def __init__(self, method: str = "direct"):
+    Supporta sample rate dinamici: il primo chunk ricevuto fissa il sample rate
+    dello stream (48kHz per VoxCPM2, 24kHz per Pocket TTS).
+    """
+
+    def __init__(self, method: str = "direct", samplerate: int = 48000):
         """
         Inizializza il servizio di output audio.
 
         Args:
             method: "direct" usa sounddevice (consigliato per streaming),
                     "streamerbot" per integrazioni esterne.
+            samplerate: sample rate nativo del modello TTS (48000=VoxCPM2, 24000=Pocket)
         """
         self.method = method
-        self.samplerate = 48000  # VoxCPM2 nativo (48kHz)
+        self.samplerate = samplerate
         self._is_playing = False
 
         self.stream = None
@@ -45,7 +50,7 @@ class AudioOutputService:
                 )
                 self.stream.start()
                 logger.info(
-                    f"SoundDevice stream started (24kHz, Mono, "
+                    f"SoundDevice stream started ({self.samplerate / 1000:.0f}kHz, Mono, "
                     f"blocksize={_BLOCKSIZE}, latency=low)"
                 )
             except Exception as e:

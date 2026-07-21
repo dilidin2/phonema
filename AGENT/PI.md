@@ -15,7 +15,8 @@ phonema/
 │       └── SERVICES.md             # Audio output, queue workers, Twitch EventSub
 ├── main.py                         # App entry point + all HTTP endpoints
 ├── models/
-│   └── voxcpm_tts_model.py         # VoxCPM2 pipeline (CPU/GPU), streaming generator
+│   ├── voxcpm_tts_model.py         # VoxCPM2 pipeline (GPU), streaming generator
+│   └── pocket_tts_model.py         # Pocket TTS pipeline (CPU), Kyutai lightweight model
 ├── services/
 │   ├── __init__.py
 │   ├── tts_service.py              # Queue-based TTS workers + VoiceRotator
@@ -36,7 +37,7 @@ phonema/
 | Section | Description | Files |
 |---------|-------------|-------|
 | API | FastAPI endpoints, HTTP routes, middleware | `main.py` |
-| TTS_MODEL | VoxCPM2 model loading, streaming inference, voice cloning | `models/voxcpm_tts_model.py` |
+| TTS_MODEL | VoxCPM2 + Pocket TTS model loading, streaming inference, voice cloning | `models/voxcpm_tts_model.py`, `models/pocket_tts_model.py` |
 | SERVICES | Audio playback, queue workers, Twitch EventSub integration | `services/tts_service.py`, `services/audio_output.py`, `services/twitch_service.py` |
 
 ## Data Flow Map (End-to-End)
@@ -67,7 +68,7 @@ AudioOutputService.play_chunk_sync() → sounddevice.OutputStream → speaker
 
 - **Entry Point**: `main.py` — FastAPI app with lifespan, all HTTP endpoints
 - **Config**: `config/tts_config.yaml` + `.env` — Model params, Twitch creds, queue settings
-- **TTS Engine**: VoxCPM2 (openbmb/VoxCPM2) — Voice cloning TTS model, 48kHz native
+- **TTS Engine (dual-mode)**: VoxCPM2 (GPU, 48kHz) o Pocket TTS (CPU, 24kHz) — selezionati via `model_type` nel config
 - **VoiceRotator**: Cycles/random/disabled voice selection for reference audio rotation
 - **EventSub**: Twitch WebSocket subscription for Channel Points redemptions
 - **Queue**: asyncio.Queue(maxsize=10) with back-pressure via sounddevice latency='low'

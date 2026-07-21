@@ -1,6 +1,10 @@
-# Core ML/Audio
+# Core ML/Audio (VoxCPM2 — GPU model)
 voxcpm
 numpy
+
+# Pocket TTS (CPU model — installa solo se usi model_type = "cpu_model")
+# pocket-tts
+# scipy
 
 # Web/API
 fastapi

@@ -1,3 +1,9 @@
+# ── Model selection ──────────────────────────────────────────────────────
+# "gpu_model"  → VoxCPM2 (pesante, richiede GPU CUDA/HIP)
+# "cpu_model"  → Pocket TTS (leggero, gira su CPU) — uses a less powerful model for edge devices
+model_type: "gpu_model"
+
+# ── VoxCPM2 config (usato solo quando model_type = "gpu_model") ─────────
 model:
   pretrained_path: "openbmb/VoxCPM2" # HuggingFace model ID
   dtype: "bfloat16"
@@ -7,15 +13,33 @@ model:
 
   ref_audio_path: "config/reference_voice.wav" # Change this to the actual name of the audio
 
+# ── Pocket TTS config (usato solo quando model_type = "cpu_model") ──────
+# Modello leggero Kyutai, gira su CPU con voice cloning e multilingua
+pocket_tts:
+  language: "italian_24l"       # "english", "italian_24l", "french_24l", "german_24l", "portuguese_24l", "spanish_24l"
+  temperature: 0.7              # campionamento (più basso = più deterministico)
+  lsd_decode_steps: 1           # più step = qualità + ma più lento (provare 5 per alta qualità)
+  eos_threshold: -4.0           # soglia end-of-sequence
+  quantize: true                # int8 quantization: meno RAM, velocità +, impatto minimo sulla qualità
+
 redemption_name: "TTS" # Change with the name of your redemption
 
 voice_rotation:
   mode: "random"
   voices_dir: "config/voices"
   voices:
-    - "voice_a.wav" # Add or remove voices as needed (and change the names to match your actual audio files)
+    # Mescola voci catalog (no HF login) e file personalizzati (serve HF login)
+    # Il codice rileva automaticamente il tipo in base al nome:
+    #   - "giovanni" → voce catalog built-in (NO HF login necessario)
+    #   - "voice_a.wav" → file .wav nella voices_dir (serve HF login + termini accettati)
+    - "voice_a.wav"
     - "voice_b.wav"
     - "voice_c.wav"
+    # Scommenta per aggiungere voci catalog:
+    # - "giovanni"   # italiano
+    # - "alba"       # inglese
+    # - "anna"       # inglese
+    # - "eve"        # inglese
 
 max_input_chars: 500
 
