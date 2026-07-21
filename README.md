@@ -1,7 +1,7 @@
 # Phonema
 
 <p align="center">
-  <img src="img/image.png" width="480">
+  <img src="docs/image.png" width="480">
 </p>
 
 > *Phoneme* — the smallest unit of sound in a spoken language.
