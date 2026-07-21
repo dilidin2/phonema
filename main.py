@@ -29,8 +29,6 @@ def load_config():
     config["TWITCH_CLIENT_ID"] = os.getenv(
         "TWITCH_CLIENT_ID", "0dy5ss974g4hsuygfbvju265xrhb87"
     )
-    config["TWITCH_BOT_USERNAME"] = os.getenv("TWITCH_BOT_USERNAME", "")
-    config["TWITCH_BOT_OAUTH_TOKEN"] = os.getenv("TWITCH_BOT_OAUTH_TOKEN", "")
 
     return config
 
@@ -136,18 +134,17 @@ async def lifespan(app: FastAPI):
     twitch_service = TwitchService(CONFIG)
 
     # Auto-connect to Twitch using saved tokens from token.json
+    # Broadcaster ID is resolved automatically from the OAuth token (no .env needed)
     logger.info("  Auto-connecting to Twitch...")
     try:
         await twitch_service.connect()
         if TOKEN_PATH.exists():
             await twitch_service.authenticate_user()
-
-            broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID")
-            if broadcaster_id:
-                await twitch_service.listen_channel_points_redemption(broadcaster_id)
-                logger.info(
-                    "  ✓ Twitch connected automatically (saved tokens loaded)"
-                )
+            await twitch_service.listen_channel_points_redemption(twitch_service.broadcaster_id)
+            logger.info(
+                f"  ✓ Twitch connected as {twitch_service.broadcaster_name} "
+                f"(ID: {twitch_service.broadcaster_id})"
+            )
         else:
             # No saved tokens — start DCF automatically in background
             result = await twitch_service._start_device_flow_async()
@@ -168,7 +165,7 @@ async def lifespan(app: FastAPI):
     app.state.tts_service = tts_service
     app.state.twitch_service = twitch_service
 
-    # Connect callback from TwitchService to TTSService
+    # Wire redemption callback from TwitchService → TTSService
     async def on_redemption(data):
         text = data.get("user_input", "") or ""
         user_name = data.get("user_name", "A user")
@@ -191,6 +188,10 @@ async def lifespan(app: FastAPI):
             )
 
     twitch_service.on_redemption = on_redemption
+
+    # Log resolved broadcaster info
+    if twitch_service.broadcaster_name:
+        logger.info(f"  Broadcaster: {twitch_service.broadcaster_name} (ID: {twitch_service.broadcaster_id})")
 
     yield
 
@@ -328,30 +329,31 @@ async def get_queue_status():
 
 @app.post("/twitch/connect")
 async def connect_twitch():
-    """Manually trigger Twitch connection"""
+    """Manually trigger Twitch connection (uses saved tokens + auto-resolved broadcaster)"""
     if not hasattr(app.state, "twitch_service"):
         raise HTTPException(status_code=500, detail="Twitch service not initialized")
 
     try:
-        # First connect EventSub
         await app.state.twitch_service.connect()
-
-        # Then authenticate user for OAuth flow
         await app.state.twitch_service.authenticate_user()
 
-        # Get broadcaster_id (numeric ID, not username) from environment
-        broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID")
+        broadcaster_id = app.state.twitch_service.broadcaster_id
         if not broadcaster_id:
             raise HTTPException(
                 status_code=400,
-                detail="TWITCH_BROADCASTER_ID not set in .env file. Get it from https://www.streamweasels.com/tools/convert-twitch-username-to-user-id/",
+                detail="Broadcaster ID not resolved — ensure tokens are valid",
             )
 
-        # Start listening for redemptions
         await app.state.twitch_service.listen_channel_points_redemption(broadcaster_id)
 
-        return {"status": "connected", "message": "Listening for redemptions..."}
+        return {
+            "status": "connected",
+            "broadcaster": app.state.twitch_service.broadcaster_name,
+            "message": "Listening for redemptions...",
+        }
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Twitch connection failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -369,7 +371,7 @@ async def disconnect_twitch():
 
 @app.post("/twitch/reconnect")
 async def reconnect_twitch():
-    """Reconnect to Twitch using saved tokens"""
+    """Reconnect to Twitch using saved tokens (auto-resolves broadcaster)"""
     if not hasattr(app.state, "twitch_service"):
         raise HTTPException(status_code=500, detail="Twitch service not initialized")
 
@@ -379,10 +381,15 @@ async def reconnect_twitch():
         await twitch_service.connect()
         await twitch_service.authenticate_user()
 
-        broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID")
-        if broadcaster_id:
-            await twitch_service.listen_channel_points_redemption(broadcaster_id)
-            return {"status": "reconnected", "message": "Using saved tokens from token.json"}
+        if twitch_service.broadcaster_id:
+            await twitch_service.listen_channel_points_redemption(twitch_service.broadcaster_id)
+            return {
+                "status": "reconnected",
+                "broadcaster": twitch_service.broadcaster_name,
+                "message": "Using saved tokens from token.json",
+            }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -394,14 +401,20 @@ async def get_twitch_status():
     if not hasattr(app.state, "twitch_service"):
         return {"status": "not_initialized"}
 
-    eventsub = app.state.twitch_service.eventsub
-    return {
-        "initialized": eventsub is not None,
-        "connected": eventsub is not None
+    twitch_service = app.state.twitch_service
+    eventsub = twitch_service.eventsub
+    connected = (
+        eventsub is not None
         and hasattr(eventsub, "_running")
         and eventsub._running
         if eventsub
-        else False,
+        else False
+    )
+    return {
+        "initialized": eventsub is not None,
+        "connected": connected,
+        "broadcaster": twitch_service.broadcaster_name,
+        "broadcaster_id": twitch_service.broadcaster_id,
     }
 
 

@@ -105,18 +105,9 @@ Copy `.env.example` to `.env`
 cp .env.example .env # Windows: rename .env.example to .env manually
 ```
 
-and fill in the values:
+No broadcaster ID or bot username needed — everything is resolved automatically from the OAuth token after browser authorization.
 
-```ini
-# Bot account username (use your channel name if no separate bot account)
-TWITCH_BOT_USERNAME=your_bot_username
-
-# Numeric broadcaster ID (your channel's user ID, not username)
-# Get it: https://www.streamweasels.com/tools/convert-twitch-username-to-user-id/
-TWITCH_BROADCASTER_ID=123456789
-```
-
-> **No Twitch app registration needed.** The bot uses a public client via the Device Code Flow — just start it and authorize from your browser.
+> **No Twitch app registration needed.** The bot uses a public client via the Device Code Flow — just start it, open `https://www.twitch.tv/activate`, enter the displayed code, and your channel info is fetched automatically.
 
 ### Model Config (`config/tts_config.yaml`)
 
@@ -233,7 +224,7 @@ You can check auth progress with:
 curl http://localhost:8100/twitch/auth/status
 ```
 
-For auto-connect on startup, set `TWITCH_BROADCASTER_ID` in `.env` — the service attempts connection on launch using saved tokens.
+On subsequent starts, if `token.json` exists the service auto-connects and resolves your channel info automatically.
 
 ### API Endpoints
 

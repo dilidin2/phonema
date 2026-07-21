@@ -5,7 +5,6 @@ Handles real-time Channel Points redemption events using EventSub
 
 import asyncio
 import json
-import os
 from pathlib import Path
 from typing import Callable, Optional
 
@@ -43,7 +42,10 @@ class TwitchService:
         self.twitch: Optional[Twitch] = None
         self.eventsub: Optional[EventSubWebsocket] = None
         self.on_redemption: Optional[Callable] = None
-        self._broadcaster_id: Optional[str] = None
+
+        # Resolved automatically after OAuth — no .env needed
+        self.broadcaster_id: Optional[str] = None
+        self.broadcaster_name: Optional[str] = None
 
         # DCF state
         self._auth_status: str = "idle"  # idle | pending | success | expired | denied
@@ -173,9 +175,26 @@ class TwitchService:
             "expires_in": expires_in,
         }
 
+    async def _resolve_user_info(self) -> None:
+        """
+        Resolve broadcaster name + ID from the authenticated Twitch client.
+        Calls get_users() with no args → returns info for the authed user.
+        """
+        if not self.twitch:
+            raise RuntimeError("Twitch client not initialized — call connect() first")
+
+        async for user in self.twitch.get_users():
+            self.broadcaster_name = user.login
+            self.broadcaster_id = user.id
+            logger.info(f"Resolved broadcaster: {self.broadcaster_name} (ID: {self.broadcaster_id})")
+            return
+
+        raise RuntimeError("Could not resolve user info from get_users()")
+
     async def _poll_and_connect(self, device_code: str, interval: int) -> None:
         """
         Poll for token and, on success, connect to Twitch automatically.
+        Resolves broadcaster_id from the OAuth token (no .env needed).
         """
         try:
             token, refresh_token = await self._poll_for_token(
@@ -187,10 +206,10 @@ class TwitchService:
             await self.connect()
             await self.authenticate_user()
 
-            broadcaster_id = os.getenv("TWITCH_BROADCASTER_ID")
-            if broadcaster_id:
-                await self.listen_channel_points_redemption(broadcaster_id)
-                logger.info("✓ Twitch connected automatically after DCF auth")
+            # Resolve broadcaster from authenticated account
+            await self._resolve_user_info()
+            await self.listen_channel_points_redemption(self.broadcaster_id)
+            logger.info("✓ Twitch connected automatically after DCF auth")
 
             if self._auth_future and not self._auth_future.done():
                 self._auth_future.set_result(True)
@@ -205,6 +224,7 @@ class TwitchService:
     async def connect(self) -> None:
         """
         Initialize the Twitch client and load tokens from token.json if present.
+        After loading tokens, resolves broadcaster info from the authenticated account.
         Does NOT block on missing tokens — call /twitch/auth/start to authorize.
         """
         logger.info("Initializing Twitch client...")
@@ -225,6 +245,9 @@ class TwitchService:
                     creds["token"], REQUIRED_SCOPES, creds["refresh"]
                 )
                 logger.info("✓ Tokens loaded from token.json")
+
+                # Resolve broadcaster info from the authenticated account
+                await self._resolve_user_info()
             except Exception as e:
                 logger.warning(
                     f"Failed to load tokens ({e}) — starting Device Code Flow for re-authentication"
@@ -234,6 +257,7 @@ class TwitchService:
                     token, REQUIRED_SCOPES, refresh_token
                 )
                 _save_tokens(token, refresh_token)
+                await self._resolve_user_info()
         else:
             logger.info(
                 "No token.json found — start Device Code Flow via POST /twitch/auth/start"
@@ -247,6 +271,7 @@ class TwitchService:
         token, refresh_token = await self._do_device_auth()
         await self.twitch.set_user_authentication(token, REQUIRED_SCOPES, refresh_token)
         _save_tokens(token, refresh_token)
+        await self._resolve_user_info()
         logger.info("✓ Re-authenticated successfully")
 
     async def authenticate_user(self) -> None:
@@ -258,8 +283,6 @@ class TwitchService:
     async def listen_channel_points_redemption(self, broadcaster_id: str) -> None:
         if not self.eventsub:
             raise RuntimeError("Call authenticate_user() first to create EventSub")
-
-        self._broadcaster_id = broadcaster_id  # Store for reconnect
 
         # Define the callback BEFORE starting, so it's always in scope.
         async def redemption_callback(data):
@@ -337,8 +360,8 @@ class TwitchService:
             try:
                 await self.connect()
                 await self.authenticate_user()
-                if self._broadcaster_id:
-                    await self.listen_channel_points_redemption(self._broadcaster_id)
+                if self.broadcaster_id:
+                    await self.listen_channel_points_redemption(self.broadcaster_id)
                 return True
             except Exception as e:
                 wait_time = 2**attempt
