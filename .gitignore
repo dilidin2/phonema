@@ -59,3 +59,4 @@ dist/
 .ruff_cache/
 
 config/tts_config.yaml
+config/blacklist.txt
